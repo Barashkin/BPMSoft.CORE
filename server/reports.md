@@ -31,38 +31,30 @@ BPMSoft поддерживает три типа отчётов:
 
 ## Архитектура
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                      Клиент (JS)                           │
-│                                                            │
-│  ReportUtilities.NUI.js ──→ ReportService (WCF)            │
-│  PrintReportUtilities.NUI.js ──→ ReportService             │
-│  FastReportService.FastReport.js ──→ FastReportService      │
-│  ReportEngineClient.Reports.js ──→ ReportEngineService     │
-│  AsyncReportNotifier.Reports.js ← ServerChannel (WebSocket)│
-└─────────────────────────┬──────────────────────────────────┘
-                          │ REST
-┌─────────────────────────▼──────────────────────────────────┐
-│                      Сервер (C#)                           │
-│                                                            │
-│  ReportService.NUI.cs                                      │
-│    ├── CreateReport() → ReportHelper → IReportGenerator    │
-│    ├── GetReportFile() → Stream                            │
-│    ├── GenerateMSWordReport() → WordReportGenerator        │
-│    └── GenerateDevExpressReport() → IReportGenerator       │
-│                                                            │
-│  FastReportService.FastReportEngine.cs                      │
-│    ├── CreateReport() → ReportGenerator → PDF              │
-│    ├── GetReportFile() → Stream                            │
-│    ├── UploadReportTemplate() / DownloadReportTemplate()   │
-│    └── FastReportTemplateProvider, DataSourceBuilder        │
-│                                                            │
-│  ReportEngineService.Reports.cs (новый API)                │
-│    └── IReportEngine → Generate(ReportSettings)            │
-│                                                            │
-│  AsyncReportGenerationService.Reports.cs                   │
-│    └── Асинхронная генерация через очередь                 │
-└────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph client["Клиент (JS)"]
+    R1["ReportUtilities.NUI.js"]
+    R2["PrintReportUtilities.NUI.js"]
+    R3["FastReportService.FastReport.js"]
+    R4["ReportEngineClient.Reports.js"]
+    R5["AsyncReportNotifier.Reports.js"]
+  end
+
+  REST["REST"]
+  WS["ServerChannel (WebSocket)"]
+
+  subgraph server["Сервер (C#)"]
+    RS["ReportService.NUI.cs<br/>CreateReport, GetReportFile, GenerateMSWordReport, GenerateDevExpressReport"]
+    FR["FastReportService.FastReportEngine.cs<br/>CreateReport, GetReportFile, Upload/DownloadReportTemplate"]
+    RE["ReportEngineService.Reports.cs<br/>IReportEngine → Generate(ReportSettings)"]
+    AS["AsyncReportGenerationService.Reports.cs<br/>Асинхронная генерация через очередь"]
+  end
+
+  R1 & R2 --> REST --> RS
+  R3 --> REST --> FR
+  R4 --> REST --> RE
+  R5 <--> WS
 ```
 
 ---
