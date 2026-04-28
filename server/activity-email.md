@@ -1,13 +1,31 @@
 # Активности и Email
 
-<!-- Версия: 1.0 | Обновлено: 2026-03-19 | Платформа: BPMSoft 1.9 -->
+<!-- Версия: 1.1 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
 <!-- Теги: активности, email, Activity, ActivityParticipant, EmailParticipantHelper, EmailRightsManager -->
+
+## Activity/Email Dive
+
+Подробная документация по активностям и email вынесена в отдельный пакет:
+
+| Документ | Назначение |
+| -------- | ---------- |
+| [activity-overview.md](activity-overview.md) | Карта Activity/Email Dive |
+| [activity-schema-constants.md](activity-schema-constants.md) | `ActivitySchema`, `ActivityConsts`, client constants |
+| [activity-lifecycle.md](activity-lifecycle.md) | Saving/Saved lifecycle, reminders, preview, hash |
+| [activity-participants-files.md](activity-participants-files.md) | `ActivityParticipant`, `EmailParticipantHelper`, `ActivityFile` |
+| [activity-email-sending.md](activity-email-sending.md) | `EmailSender`, `ActivityEmailSender`, statuses |
+| [activity-process-user-tasks.md](activity-process-user-tasks.md) | Process user tasks for activity/email |
+| [activity-mailbox-sync.md](activity-mailbox-sync.md) | Mailbox settings, Exchange sync, calendar |
+| [activity-client-ui.md](activity-client-ui.md) | `EmailPageV2`, scheduler, `IsHtmlBody` |
+| [activity-pattern-catalog.md](activity-pattern-catalog.md) | Каталог реальных activity/email-паттернов |
+| [activity-troubleshooting.md](activity-troubleshooting.md) | Диагностика задач, писем и синхронизации |
 
 ## Обзор
 
 Активность (Activity) — универсальная сущность BPMSoft для задач, звонков, email-сообщений, встреч. Тип определяется полем `Type` (Lookup → ActivityType). Email — это Activity с `Type = EmailTypeUId`.
 
 **Файлы исходного кода:**
+
 - `ActivitySchema.Base.cs` — схема сущности (45+ колонок)
 - `Activity.Base.cs` — EventsProcess (~760 строк бизнес-логики)
 - `ActivityConsts.Base.cs` — GUID-константы
@@ -30,7 +48,7 @@
 ### Основные колонки
 
 | Колонка | Тип | Обязательная | Индекс | Ссылка | Значение по умолчанию |
-|---------|-----|:---:|:---:|--------|----------------------|
+| ------- | --- | :--: | :--: | ------ | --------------------- |
 | Title | LongText | да | да | — | — |
 | StartDate | DateTime | да | да | — | CurrentDateTime |
 | DueDate | DateTime | да | да | — | CurrentDateTime |
@@ -49,7 +67,7 @@
 ### Колонки для Email
 
 | Колонка | Тип | Индекс | Описание |
-|---------|-----|:---:|----------|
+| ------- | --- | :--: | -------- |
 | Sender | MediumText | да | Адрес отправителя (форматированная строка) |
 | Recepient | MaxSizeText | — | Получатели (To) |
 | CopyRecepient | MaxSizeText | — | Копия (CC) |
@@ -70,7 +88,7 @@
 ### Прочие колонки
 
 | Колонка | Тип | Описание |
-|---------|-----|----------|
+| ------- | --- | -------- |
 | RemindToAuthor | Boolean | Напоминание автору |
 | RemindToAuthorDate | DateTime | Дата напоминания автору |
 | RemindToOwner | Boolean | Напоминание ответственному |
@@ -96,7 +114,7 @@
 ### ActivityType (типы)
 
 | GUID | Код | Описание |
-|------|-----|----------|
+| ---- | --- | -------- |
 | `fbe0acdc-cfc0-df11-b00f-001d60e938c6` | — | Задача (по умолчанию) |
 | `IntegrationConsts.EmailTypeId` | Email | Email |
 | `IntegrationConsts.MeetingTypeId` | Task | Встреча (TaskTypeUId) |
@@ -108,7 +126,7 @@
 Schema: `BaseCodeLookup` + колонка `Finish` (Boolean)
 
 | GUID | Описание |
-|------|----------|
+| ---- | -------- |
 | `384d4b84-58e6-df11-971b-001d60e938c6` | Новая (New) — по умолчанию |
 | `394d4b84-58e6-df11-971b-001d60e938c6` | В работе (InProgress) |
 | `IntegrationConsts.ActivityCompletedStatusId` | Завершена (Completed) |
@@ -117,7 +135,7 @@ Schema: `BaseCodeLookup` + колонка `Finish` (Boolean)
 ### ActivityCategory (категории)
 
 | GUID | Описание |
-|------|----------|
+| ---- | -------- |
 | `f51c4643-58e6-df11-971b-001d60e938c6` | Задача (Task) — по умолчанию |
 | `42c74c49-58e6-df11-971b-001d60e938c6` | Встреча (Appointment) |
 | `IntegrationConsts.EmailCategoryId` | Email |
@@ -127,7 +145,7 @@ Schema: `BaseCodeLookup` + колонка `Finish` (Boolean)
 Schema: `BaseCodeLookup`
 
 | GUID | Описание |
-|------|----------|
+| ---- | -------- |
 | `20c0c460-6107-e011-a646-16d83cab0980` | Не отправлено (NotSend) |
 | `603ba6af-6107-e011-a646-16d83cab0980` | В процессе (InProgress) |
 | `IntegrationConsts.EmailSentStatusId` | Отправлено (Sended) |
@@ -136,7 +154,7 @@ Schema: `BaseCodeLookup`
 ### MessageType (тип сообщения)
 
 | GUID | Описание |
-|------|----------|
+| ---- | -------- |
 | `7f9d1f86-f36b-1410-068c-20cf30b39373` | Входящее (Incoming) |
 | `7f6d3f94-f36b-1410-068c-20cf30b39373` | Исходящее (Outgoing) |
 
@@ -187,7 +205,7 @@ public static class ActivityConsts
 **Schema UId:** определяется в `ActivityParticipantSchema.Base.cs`
 
 | Колонка | Тип | Описание |
-|---------|-----|----------|
+| ------- | --- | -------- |
 | Activity | Lookup → Activity | Активность |
 | Participant | Lookup → Contact | Участник (контакт) |
 | Role | Lookup → ActivityParticipantRole | Роль (From/To/CC/BCC) |
@@ -199,6 +217,7 @@ public static class ActivityConsts
 ### EventsProcess участников
 
 При сохранении/удалении участника:
+
 - Обновление `ActivityCorrespondence` и `ModifiedOn` активности
 - Установка прав доступа для Owner и отправителя
 - Управление `InviteActivityParticipant`
@@ -338,6 +357,7 @@ public virtual void AddActivityParticipantToInsertedValues(Guid participantId,
 ### Формирование Preview и MailHash
 
 При сохранении email автоматически:
+
 1. Извлекает текстовое превью из HTML-тела (до 245 символов)
 2. Генерирует хеш для дедупликации
 
@@ -377,6 +397,7 @@ helper.SetEmailParticipants();
 ```
 
 **Ключевые методы:**
+
 - `InitializeParameters(Entity email)` — парсинг полей email в списки адресов
 - `SetEmailParticipants()` — создание/обновление участников
 - `RemoveEmailParticipantByContactId(Guid contactId)` — удаление участника
@@ -421,7 +442,7 @@ public virtual void SetActivityParticipantRightsOnSaved() {
 Создаётся при вставке email для хранения метаданных синхронизации:
 
 | Колонка | Тип | Описание |
-|---------|-----|----------|
+| ------- | --- | -------- |
 | Activity | Lookup → Activity | Связанная активность |
 | Owner | Lookup → Contact | Владелец |
 | Role | Lookup | Роль |
@@ -506,7 +527,7 @@ public static class ActivityUtils {
 
 ### Архитектура страниц
 
-```
+```text
 ActivityPageV2.UIv2.js          — карточка задачи/встречи
     ├── Mixins: ActivityDatesMixin, ActivityTimezoneMixin
     ├── Details: Files, ActivityParticipant, EntityConnections, EmailDetailV2
@@ -535,7 +556,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 **Ключевые атрибуты:**
 
 | Атрибут | Тип | Описание |
-|---------|-----|----------|
+| ------- | --- | -------- |
 | Author | LOOKUP (required) | Автор |
 | Status | LOOKUP (required) | Статус |
 | StartDate, DueDate | DATE_TIME | Период |
@@ -549,13 +570,14 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 **Детали:**
 
 | Деталь | Schema | Связь |
-|--------|--------|-------|
+| ------ | ------ | ----- |
 | Files | ActivityFile | Activity = Id |
 | ActivityParticipant | ActivityParticipant | Activity = Id |
 | EntityConnections | EntityConnection | — |
 | EmailDetailV2 | Activity | ActivityConnection, Type=Email |
 
 **Методы:**
+
 - `onEntityInitialized` — инициализация, установка значений из расписания
 - `validate` / `validateDueDate` — DueDate >= StartDate
 - `activityResultValidator` — проверка обязательности результата при финальном статусе
@@ -573,7 +595,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 **Дополнительные атрибуты:**
 
 | Атрибут | Тип | Описание |
-|---------|-----|----------|
+| ------- | --- | -------- |
 | SenderEnum | ENUM | Выбранный почтовый ящик отправителя |
 | Signature, UseSignature | TEXT / BOOLEAN | Подпись |
 | PlainTextMode | BOOLEAN | Режим текста без разметки |
@@ -584,6 +606,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 | EmailSendStatus | LOOKUP | Статус отправки |
 
 **Методы:**
+
 - `sendEmail` — отправка email
 - `replyEmail` / `replyAllEmail` / `forwardEmail` — ответ / пересылка
 - `checkSenderBeforeSend` — проверка отправителя перед отправкой
@@ -611,6 +634,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 **Файл:** `EmailMessagePublisherPage.EmailMessagePublisher.js`
 
 Используется в Actions Dashboard для быстрой отправки email из карточки:
+
 - `getPublishData` — формирует данные для публикации
 - `loadEmailData` — загрузка данных из email-запроса
 - `loadSenders` / `setDefaultSenderEnum` — выбор почтового ящика
@@ -622,7 +646,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 ### Ключевые миксины для email
 
 | Миксин | Файл | Назначение |
-|--------|------|------------|
+| ------ | ---- | ---------- |
 | EmailActionsMixin | `EmailActionsMixin.NUI.js` | Отправка, ответ, пересылка |
 | EmailRelationsMixin | `EmailRelationsMixin.UIv2.js` | Связи email с сущностями |
 | EmailsSearchMixin | `EmailsSearchMixin.EmailsSearch.js` | Поиск получателей через Elasticsearch |
@@ -634,7 +658,7 @@ EmailMessagePublisherPage.*.js  — публикация email из Actions Dash
 
 ## Диаграмма обработки email
 
-```
+```text
 [Пользователь нажимает "Отправить"]
     │
     ▼
@@ -750,7 +774,7 @@ entity.Save();
 ## Антипаттерны
 
 | ❌ Неправильно | ✅ Правильно |
-|---------------|-------------|
+| ------------- | ----------- |
 | Создание Activity без обязательных полей (Title, StartDate, DueDate, Status) — приведёт к ошибке сохранения | Всегда заполнять обязательные поля или вызывать `SetDefColumnValues()` |
 | Ручное создание ActivityParticipant вместо `EmailParticipantHelper` — дублирование логики парсинга адресов | Использовать `EmailParticipantHelper.SetEmailParticipants()` для email |
 | Изменение полей email (Body, Recepient) после отправки — может нарушить цепочку переписки и MailHash | Для коррекции создавать новый email (Forward/Reply) |
@@ -760,13 +784,14 @@ entity.Save();
 ## Troubleshooting
 
 | Ошибка / Симптом | Причина | Решение |
-|-----------------|---------|---------|
+| --------------- | ------- | ------- |
 | Email не отправляется | `EmailSendStatus` не установлен или настройки MailboxSyncSettings некорректны | Проверить `EmailSendStatusId`, наличие записи в `MailboxSyncSettings` и подключение к SMTP |
 | Участники email не создаются | Тип Activity ≠ `EmailTypeUId` | Убедиться что `TypeId = ActivityConsts.EmailTypeUId` перед сохранением |
 | Preview пустой | `Body` не содержит HTML или не заполнен | Поле `Body` должно содержать HTML-разметку; Preview формируется автоматически из Body (до 245 символов) |
 | `MailHash` не генерируется | `SendDate` пустое | Заполнить `SendDate` — хеш генерируется только при наличии даты отправки |
 
 **Советы по отладке:**
+
 - Проверить `ErrorOnSend` — содержит текст ошибки отправки
 - `IsNeedProcess = true` означает, что Contact/Account не привязаны к email
 - Журнал синхронизации: таблица `EmailMessageData`

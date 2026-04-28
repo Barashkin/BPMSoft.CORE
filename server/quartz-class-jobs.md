@@ -1,0 +1,213 @@
+# ClassJob и IJobExecutor
+
+<!-- Версия: 1.0 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
+<!-- Теги: Quartz, ClassJob, IJobExecutor, DefaultBinding, scheduler -->
+
+> Документ о Quartz-сценариях, где scheduler вызывает C#-класс, реализующий `IJobExecutor`.
+
+## Что такое `ClassJob`
+
+`ClassJob` - это Quartz job, которая не запускает BPMSoft process, а вызывает `IJobExecutor.Execute(...)`.
+
+Базовый контракт:
+
+```csharp
+[DefaultBinding(typeof(IJobExecutor), Name = nameof(MyJob))]
+public class MyJob : IJobExecutor
+{
+    public void Execute(UserConnection userConnection, IDictionary<string, object> parameters) {
+        // логика задачи
+    }
+}
+```
+
+Создание обычно идёт через:
+
+```csharp
+wrapper.CreateClassJob<MyJob>(jobName, jobGroup, userConnection, parameters, true);
+```
+
+## Когда выбирать `ClassJob`
+
+`ClassJob` подходит, когда:
+
+- нужна C#-логика, а не просто запуск процесса;
+- задача использует DI и сервисы;
+- job должна сама перепланировать себя;
+- у job есть recovery/self-healing логика;
+- scheduler должен вызывать не BPMSoft process, а executor-паттерн.
+
+## Контракт `IJobExecutor`
+
+Минимально требуется метод:
+
+```csharp
+void Execute(UserConnection userConnection, IDictionary<string, object> parameters)
+```
+
+Практически это означает:
+
+- `UserConnection` приходит в рантайме от scheduler;
+- параметры job передаются словарём;
+- повторное планирование часто делается прямо внутри `Execute(...)`.
+
+## Типовые паттерны `ClassJob`
+
+### 1. “Постоянная” фоноваая задача
+
+Примеры:
+
+- `ProcessMaintenanceJob`
+- `MailSyncJob`
+- `NotificationCleanerJob`
+- `RemindingJob`
+
+Схема:
+
+1. `IAppEventListener.OnAppStart`;
+1. `Register(...)`;
+1. `CreateClassJob<T>(...)`;
+1. interval trigger;
+1. долгоживущая задача существует в scheduler постоянно.
+
+### 2. Fire-and-forget executor
+
+Примеры:
+
+- `AsyncAcceptChatNotifierExecutor`
+- `MassLeadsStageChangingExecutor`
+- `MultiDeleteExecutor`
+
+Схема:
+
+- `ScheduleImmediateJob<T>(...)`
+- или `TriggerJob<T>(...)`
+
+Такие задачи не держат постоянного расписания.
+
+### 3. Self-rescheduling job
+
+Примеры:
+
+- `EmailMiningJob`
+- `MLBatchPredictionJob`
+- `MLModelTrainerJob`
+
+ML-specific детали этих jobs описаны в
+[ML Runtime Jobs](ml-runtime-jobs.md).
+
+Схема:
+
+1. job отрабатывает;
+1. в `finally` вызывает `SchedulerUtils.ScheduleNextRun(...)`;
+1. следующее срабатывание создаётся как новая одноразовая задача на будущее.
+
+## Реальные production-примеры
+
+### `ProcessMaintenanceJob`
+
+Что делает:
+
+- читает частоту из `SysSettings`;
+- хранит `initialFrequency` в параметрах job;
+- если частота изменилась, сама себя перерегистрирует;
+- исполняет maintenance step.
+
+Это классический self-healing registration pattern.
+
+### `MailSyncJob`
+
+Что делает:
+
+- проверяет флаг включения через `EnableReSynchronizationMechanism`;
+- нормализует частоту через минимум `1` минута;
+- если частота изменилась, вызывает `Register(...)` повторно;
+- выполняет прикладную логику синхронизации.
+
+### `TouchQueueJobDispatcher`
+
+Это не просто executor, а `BaseQueueJobDispatcher` + `IAppEventListener`.
+Особенности:
+
+- использует custom scheduler;
+- умеет искать broken/paused trigger'ы;
+- при старте вызывает `TryRescheduleJob()`;
+- сочетает runtime execution и monitoring/recovery.
+
+## Параметры job
+
+Частый паттерн - передавать executor'у служебные параметры:
+
+| Параметр | Где используется |
+| ----- | ----- |
+| `initialFrequency` | `ProcessMaintenanceJob`, `MailSyncJob` |
+| доменные параметры | интеграционные и batch job |
+
+Смысл такого параметра:
+
+- зафиксировать частоту на момент планирования;
+- потом в `Execute(...)` сравнить её с актуальным `SysSetting`;
+- при расхождении перепланировать задачу.
+
+## Именование job/group
+
+Часто используется:
+
+- `jobName = typeof(MyJob).FullName`
+- `jobGroup = "<Subsystem>Group"`
+
+Но встречаются и другие варианты:
+
+- `AssemblyQualifiedName` для уникальности;
+- job-group по имени очереди/подсистемы;
+- job-name с пользовательским идентификатором.
+
+Именование критично для:
+
+- `DoesJobExist(...)`;
+- safe remove/recreate;
+- поиска проблемных задач;
+- миграции между scheduler instance.
+
+## `ClassJob` vs `ProcessJob`
+
+| Вопрос | `ClassJob` | `ProcessJob` |
+| ----- | ----- | ----- |
+| Логика в C# | да | нет |
+| Логика в BPMSoft process | нет | да |
+| DI и сервисы | да | ограниченно |
+| Self-healing внутри `Execute(...)` | да | обычно нет |
+| Быстрый запуск существующего процесса | избыточно | удобно |
+
+## Подводные камни
+
+### 1. Job зависит от DI, но создана статически
+
+Если executor полагается на injected зависимости, безопаснее использовать `IAppSchedulerWraper` и стандартный binding-паттерн.
+
+### 2. Job меняет частоту, но старая задача не удаляется
+
+Нужен явный `DoesJobExist(...)` + `RemoveJob(...)` перед новой регистрацией.
+
+### 3. Параметры устаревают
+
+Если job хранит частоту или конфиг в `parameters`, внутри `Execute(...)` желательно сверяться с актуальными `SysSettings`.
+
+## Ключевые файлы
+
+| Область | Файл |
+| ----- | ----- |
+| Wrapper registration | `Autogenerated/Src/ProcessMaintenanceEventListener.Base.cs` |
+| Wrapper registration + feature flags | `Autogenerated/Src/MailSyncJob.MailSync.cs` |
+| Queue dispatcher base | `Autogenerated/Src/BaseQueueJobDispatcher.TasksQueue.cs` |
+| Custom scheduler queue job | `Autogenerated/Src/TouchQueueJobDispatcher.TouchPoints.cs` |
+| Self-rescheduling batch job | `Autogenerated/Src/MLBatchPredictionJob.ML.cs` |
+| Self-rescheduling integration job | `Autogenerated/Src/EmailMiningJob.EmailMining.cs` |
+
+## Связанные документы
+
+- [Обзор Quartz](scheduler-quartz.md)
+- [AppScheduler API](quartz-appscheduler-api.md)
+- [Паттерны регистрации Quartz задач](quartz-registration-patterns.md)
+- [Каталог Quartz job-паттернов](quartz-job-catalog.md)
+- [Quartz troubleshooting](quartz-troubleshooting.md)

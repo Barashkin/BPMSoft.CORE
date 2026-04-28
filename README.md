@@ -8,6 +8,8 @@
 
 **Главное оглавление:** [INDEX.md](INDEX.md)
 
+**Конституция энциклопедии и проверки целостности:** [ENCYCLOPEDIA.md](ENCYCLOPEDIA.md) · [VERIFY.md](VERIFY.md)
+
 В INDEX.md вы найдёте:
 
 - **Getting Started** — первые шаги за 15 минут (структура проекта, Hello World, цикл разработки)

@@ -139,4 +139,4 @@ AppScheduler.RemoveJob(jobName, jobGroupName);
 
 ---
 
-**Связанные документы:** [Планировщик Quartz](../server/scheduler-quartz.md) | [Расширенное руководство — оглавление](INDEX.md)
+**Связанные документы:** [Планировщик Quartz](../server/scheduler-quartz.md) | [AppScheduler API](../server/quartz-appscheduler-api.md) | [Triggers, cron и misfire](../server/quartz-triggers-cron.md) | [Quartz job catalog](../server/quartz-job-catalog.md) | [Расширенное руководство — оглавление](INDEX.md)

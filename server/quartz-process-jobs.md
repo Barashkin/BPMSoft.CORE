@@ -1,0 +1,205 @@
+# ProcessJob и QuartzJobTriggerManager
+
+<!-- Версия: 1.0 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
+<!-- Теги: Quartz, ProcessJob, QuartzJobTriggerManager, JobConfig, process -->
+
+> Документ о Quartz-сценариях, где scheduler запускает не C#-executor, а бизнес-процесс BPMSoft.
+
+## Что такое `ProcessJob`
+
+`ProcessJob` - это Quartz job, которая запускает бизнес-процесс по имени.
+
+Базовый конструктор в платформенном API:
+
+```csharp
+IJobDetail job = AppScheduler.CreateProcessJob(
+    jobName,
+    jobGroup,
+    processName,
+    workspaceName,
+    userName,
+    parameters,
+    isSystemUser
+);
+```
+
+Такой job применяется, когда:
+
+- scheduler должен запускать уже существующий процесс;
+- нет смысла писать отдельный `IJobExecutor`;
+- бизнес-логика уже живёт в BPMSoft process designer.
+
+## Где `ProcessJob` встречается в решении
+
+| Сценарий | Файл |
+| ----- | ----- |
+| Ежедневный cron-процесс | `AnniversaryRemindingsEventListener.Base.cs` |
+| Планирование рассылки Sender | `BSSchedulerService.BPMSoftSender.cs` |
+| Search duplicates / deduplication | `DeduplicationSearch.Deduplication.cs` |
+| Периодические sync job | `ImapSyncJobScheduler.Base.cs` |
+| Создание по PeriodicitySettings | `PeriodicitySettingsUtilities.Base.cs` |
+
+## `JobConfig`
+
+`QuartzJobTriggerManager` использует DTO `JobConfig`, чтобы описать запуск процесса.
+
+### Важные поля
+
+| Поле | Назначение |
+| ----- | ----- |
+| `ProcessName` | имя процесса |
+| `JobGroup` | группа job |
+| `JobName` | имя job, по умолчанию `Guid` |
+| `WorkspaceName` | workspace для запуска |
+| `UserName` | пользователь запуска |
+| `IsSystemUser` | системный/обычный пользователь |
+| `Parameters` | параметры процесса |
+| `JobOptions` | дополнительные опции job |
+
+### Особенность по умолчанию
+
+Если `JobGroup` явно не задан, он строится как:
+
+- `ProcessName + "Group"`
+
+Это удобно для однотипных process-runner job'ов, но может приводить к большому числу одноразовых job в одной группе.
+
+## `QuartzJobTriggerManager`
+
+`QuartzJobTriggerManager` - singleton-утилита для двух сценариев:
+
+- немедленно триггернуть процесс;
+- создать `ProcessJob` и запланировать её с заданной misfire policy.
+
+## Методы `QuartzJobTriggerManager`
+
+### `RunTriggerJob(JobConfig jobConfig)`
+
+Использует:
+
+```csharp
+AppScheduler.TriggerJob(
+    jobConfig.JobName,
+    jobConfig.JobGroup,
+    jobConfig.ProcessName,
+    jobConfig.WorkspaceName,
+    jobConfig.UserName,
+    jobConfig.Parameters
+);
+```
+
+Это fire-and-forget путь для immediate запуска.
+
+### `RunScheduleJob(JobConfig jobConfig, int misfireInstruction)`
+
+Делает следующее:
+
+1. собирает `ProcessJob` через `CreateProcessJob(...)`;
+1. создаёт `SimpleTriggerImpl` с нужным `MisfireInstruction`;
+1. вызывает `AppScheduler.Instance.ScheduleJob(job, trigger)`.
+
+Важно: trigger name генерируется как новый `Guid`, а trigger group берётся из `jobConfig.JobGroup`.
+
+## `ProcessJob` vs `TriggerJob`
+
+| Вопрос | `CreateProcessJob + ScheduleJob` | `TriggerJob` |
+| ----- | ----- | ----- |
+| Нужно явное расписание | да | нет |
+| Нужен trigger lifecycle | да | нет |
+| Одноразовый immediate fire | можно, но избыточно | оптимально |
+| Нужен misfire control | да | нет |
+
+## Реальные паттерны
+
+### 1. Cron ProcessJob при старте приложения
+
+Паттерн:
+
+1. в `OnAppStart` читается системная настройка;
+1. проверяется `DoesJobExist`;
+1. создаётся `ProcessJob`;
+1. создаётся `CronTriggerImpl`;
+1. задача ставится в scheduler.
+
+См.:
+
+- `AnniversaryRemindingsEventListener.Base.cs`
+
+### 2. ProcessJob с remove-and-recreate
+
+Паттерн:
+
+1. `RemoveJob(...)`;
+1. `CreateProcessJob(...)`;
+1. `ScheduleJob(...)`.
+
+См.:
+
+- `BSSchedulerService.BPMSoftSender.cs`
+- `PeriodicitySettingsUtilities.Base.cs`
+
+Этот подход предпочтителен, когда расписание меняется и проще полностью пересобрать job/trigger.
+
+### 3. Periodic sync process
+
+Паттерн:
+
+```csharp
+AppScheduler.ScheduleMinutelyProcessJob(
+    jobName,
+    jobGroup,
+    processName,
+    workspaceName,
+    userName,
+    periodInMinutes
+);
+```
+
+См.:
+
+- `SchedulerJobService.NUI.cs`
+- `ImapSyncJobScheduler.Base.cs`
+
+## Когда не нужен `ProcessJob`
+
+Лучше взять `ClassJob`, если:
+
+- нужна сложная C#-логика;
+- задача должна сама себя перепланировать;
+- требуется DI и сервисные зависимости;
+- выполнение не сводится к одному BPMSoft process.
+
+Подробности см. в [quartz-class-jobs.md](quartz-class-jobs.md).
+
+## Риски и ограничения
+
+### 1. Job name / group нужно проектировать осознанно
+
+Случайный `Guid` в `JobName` полезен для одноразовых запусков, но неудобен для повторного контроля и clean-up.
+
+### 2. `TriggerJob` не заменяет полноценное расписание
+
+Если системе нужен recovery/misfire/next-fire lifecycle, лучше создавать job и trigger явно.
+
+### 3. Process-first подход упрощает интеграцию, но скрывает логику
+
+Quartz видит только запуск процесса, а не внутренние шаги. Для troubleshooting это значит, что проверять надо и scheduler, и сам процесс.
+
+## Ключевые файлы
+
+| Область | Файл |
+| ----- | ----- |
+| DTO и manager | `Autogenerated/Src/QuartzJobTriggerManager.Base.cs` |
+| Service facade | `Autogenerated/Src/SchedulerJobService.NUI.cs` |
+| Sender scheduling | `Autogenerated/Src/BSSchedulerService.BPMSoftSender.cs` |
+| Periodicity-driven scheduling | `Autogenerated/Src/PeriodicitySettingsUtilities.Base.cs` |
+| Daily cron process | `Autogenerated/Src/AnniversaryRemindingsEventListener.Base.cs` |
+
+## Связанные документы
+
+- [Обзор Quartz](scheduler-quartz.md)
+- [AppScheduler API](quartz-appscheduler-api.md)
+- [Triggers, cron и misfire](quartz-triggers-cron.md)
+- [SchedulerJobService](quartz-schedulerjobservice.md)
+- [PeriodicitySettingsUtilities](quartz-periodicity-settings.md)
+- [Каталог Quartz job-паттернов](quartz-job-catalog.md)

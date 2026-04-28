@@ -1,42 +1,45 @@
 # Архитектура платформы BPMSoft
 
-<!-- Версия: 1.0 | Обновлено: 2026-03-19 | Платформа: BPMSoft 1.9 -->
+<!-- Версия: 1.3 | Обновлено: 2026-04-28 | Платформа: BPMSoft 1.9 -->
 <!-- Теги: архитектура, обзор, UserConnection, пакеты, клиент-сервер -->
 
 ## Общая структура
 
 BPMSoft — платформа low-code для построения CRM и BPM-решений. Архитектура разделена на серверную (C#/.NET) и клиентскую (JavaScript/ExtJS) части.
 
-```mermaid
-flowchart TB
-  subgraph client["Клиент (Browser)"]
-    direction TB
-    P[Pages]
-    S[Sections]
-    D[Details]
-    AMD["AMD Modules<br/>(RequireJS)"]
-    SDK["BPMSoft.js<br/>(Core SDK)"]
-    P & S & D --> AMD
-    AMD --> SDK
-  end
-
-  subgraph transport[" "]
-    REST["REST / WCF · JSON"]
-  end
-
-  subgraph server["Сервер (.NET)"]
-    direction TB
-    WCF[WCF Services]
-    EVT[EventListeners]
-    ESQ["ESQ / ORM"]
-    SCH["Entity Schemas"]
-    DB[(Database)]
-    WCF & EVT --> ESQ
-    ESQ --> SCH
-    SCH --> DB
-  end
-
-  client --> REST --> server
+```text
+┌─────────────────────────────────────────────┐
+│              Клиент (Browser)               │
+│  ┌────────┐ ┌─────────┐ ┌───────────────┐   │
+│  │ Pages  │ │Sections │ │   Details     │   │
+│  └───┬────┘ └────┬────┘ └──────┬────────┘   │
+│      └───────────┼─────────────┘            │
+│           ┌──────┴──────┐                   │
+│           │  AMD Modules│                   │
+│           │  (RequireJS)│                   │
+│           └──────┬──────┘                   │
+│           ┌──────┴──────┐                   │
+│           │  BPMSoft.js │                   │
+│           │  (Core SDK) │                   │
+│           └──────┬──────┘                   │
+├──────────────────┼──────────────────────────┤
+│         REST/WCF │ JSON                     │
+├──────────────────┼──────────────────────────┤
+│              Сервер (.NET)                  │
+│  ┌────────────┐ ┌──────────────┐            │
+│  │WCF Services│ │EventListeners│            │
+│  └─────┬──────┘ └─────┬────────┘            │
+│        └──────┬───────┘                     │
+│        ┌──────┴───────┐                     │
+│        │  ESQ / ORM   │                     │
+│        └──────┬───────┘                     │
+│        ┌──────┴───────┐                     │
+│        │Entity Schemas│                     │
+│        └──────┬───────┘                     │
+│        ┌──────┴───────┐                     │
+│        │  Database    │                     │
+│        └──────────────┘                     │
+└─────────────────────────────────────────────┘
 ```
 
 ## Пакетная система
@@ -49,44 +52,35 @@ flowchart TB
 
 ### Иерархия пакетов (основные)
 
-```mermaid
-flowchart TD
-  Base["Base — ядро: сущности, утилиты, базовые классы"]
-  NUI["NUI — основной UI-фреймворк"]
-  UIv2["UIv2 — расширенный UI"]
-  SSP["SSP — портал самообслуживания"]
-  CTI["CTIBase — интеграция с телефонией"]
-  PD[ProcessDesigner]
-  FI[FileImport]
-  DD[Deduplication]
-  OM[OmnichannelMessaging]
-  ML[ML]
-  Cal[Calendar]
-  ESN[ESN]
-  GS[GlobalSearch]
-  CB[ContentBuilder]
-
-  Base --> NUI
-  NUI --> UIv2
-  NUI --> SSP
-  NUI --> CTI
-  Base --> PD
-  Base --> FI
-  Base --> DD
-  Base --> OM
-  Base --> ML
-  Base --> Cal
-  Base --> ESN
-  Base --> GS
-  Base --> CB
+```text
+Base                     — ядро: сущности, утилиты, базовые классы
+├── NUI                  — основной UI-фреймворк (страницы, секции, детали)
+│   ├── UIv2             — расширенный UI
+│   ├── SSP              — портал самообслуживания
+│   └── CTIBase          — интеграция с телефонией
+├── ProcessDesigner      — дизайнер бизнес-процессов
+├── FileImport           — импорт файлов
+├── Deduplication        — дедупликация
+├── OmnichannelMessaging / BPMSoftOCC / BPMSoftSender — омниканальные коммуникации, чаты, routing, рассылки
+├── ML                   — машинное обучение
+├── Calendar             — календарь и рабочее время
+├── ESN                  — корпоративная соц. сеть
+├── GlobalSearch         — глобальный поиск
+└── ContentBuilder       — конструктор контента
 ```
+
+Для OCC-контура не ограничивайтесь общим пакетом `OmnichannelMessaging`: в базовом решении рабочая логика распределена между `BPMSoftOCC`, `BPMSoftOCCWAMfmsJson`, `BPMSoftSender`.
+Подробности см. в [bpmsoft-occ.md](bpmsoft-occ.md).
+
+Подробности по пакетам, `SysSchema`, сборке changed configuration и delivery
+artifacts см. в [Admin Packages Build Overview](../server/admin-packages-build-overview.md).
 
 ## Серверная часть
 
-### Ключевые компоненты
+### Ключевые серверные компоненты
 
 | Компонент | Назначение | Пространство имён |
-|-----------|-----------|-------------------|
+| ---------- | ---------- | ------------------- |
 | **Entity Schema** | Описание структуры данных (таблица БД) | `BPMSoft.Configuration` |
 | **Entity** | Экземпляр записи сущности | `BPMSoft.Core.Entities` |
 | **EntitySchemaQuery (ESQ)** | ORM-запросы к данным | `BPMSoft.Core.Entities` |
@@ -111,6 +105,7 @@ UserConnection userConnection = Get<ProcessSchemaUserConnection>("UserConnection
 ```
 
 Предоставляет:
+
 - `DBSecurityEngine` — проверка прав доступа
 - `SessionData` — данные сессии
 - `CurrentUser` — текущий пользователь
@@ -119,10 +114,10 @@ UserConnection userConnection = Get<ProcessSchemaUserConnection>("UserConnection
 
 ## Клиентская часть
 
-### Ключевые компоненты
+### Ключевые клиентские компоненты
 
 | Компонент | Назначение |
-|-----------|-----------|
+| ---------- | ---------- |
 | **AMD Module** | Единица кода (define/require через RequireJS) |
 | **Page (BasePageV2)** | Страница карточки записи |
 | **Section (BaseSectionV2)** | Раздел (список + карточка) |
@@ -145,13 +140,12 @@ BPMSoft.utils            // утилиты
 
 ## Взаимодействие клиент-сервер
 
-```mermaid
-sequenceDiagram
-  participant Client as Клиент
-  participant WCF as WCF Service
-  Client->>+WCF: ServiceHelper.callService() / POST JSON
-  WCF->>WCF: UserConnection + ESQ
-  WCF-->>-Client: JSON response
+```text
+[Клиент]                         [Сервер]
+ServiceHelper.callService() ──→ [ServiceContract] WCF Service
+       ↑                              │
+   JSON response              UserConnection + ESQ
+       └──────────────────────────────┘
 ```
 
 URL паттерн: `/0/rest/{ServiceName}/{MethodName}` (POST, JSON).
@@ -160,18 +154,37 @@ URL паттерн: `/0/rest/{ServiceName}/{MethodName}` (POST, JSON).
 
 Путь HTTP-запроса от браузера до базы данных и обратно:
 
-```mermaid
-flowchart TD
-  A["1. Клиент: ServiceHelper.callService(...)"]
-  B["2. HTTP POST /0/rest/{ServiceName}/{MethodName}"]
-  C["3. WCF Routing → находит ServiceContract по URL"]
-  D["4. Метод сервиса: UserConnection из Session"]
-  E["5. Бизнес-логика: ESQ / Entity"]
-  F["6. Database: SQL с DBSecurityEngine"]
-  G["7. Entity/EntityCollection → JSON"]
-  H["8. HTTP Response → callback"]
-  A --> B --> C --> D --> E --> F --> G --> H
+```text
+1. Клиент: ServiceHelper.callService("ServiceName", "MethodName", callback, data)
+       │
+       ▼
+2. HTTP POST /0/rest/{ServiceName}/{MethodName}
+   Content-Type: application/json
+       │
+       ▼
+3. WCF Routing → находит [ServiceContract] по URL
+       │
+       ▼
+4. ServiceContract: метод сервиса получает управление
+   UserConnection = (UserConnection)HttpContext.Current.Session["UserConnection"]
+       │
+       ▼
+5. Бизнес-логика: ESQ / Entity для работы с данными
+   var esq = new EntitySchemaQuery(userConnection.EntitySchemaManager, "Contact");
+       │
+       ▼
+6. Database: SQL-запрос с учётом прав доступа (DBSecurityEngine)
+       │
+       ▼
+7. Результат → Entity/EntityCollection → сериализация в JSON
+       │
+       ▼
+8. HTTP Response (JSON) → клиентский callback
 ```
+
+Если нужен низкоуровневый доступ к данным (`Select`, `DBExecutor`,
+transactions, stored procedures), см.
+[Data Access Beyond ESQ Overview](../server/data-access-beyond-esq-overview.md).
 
 Пример полного цикла:
 
@@ -210,7 +223,7 @@ BPMSoft.AjaxProvider.request({
 Места, где разработчики могут расширить платформу:
 
 | Точка расширения | Слой | Назначение |
-|-----------------|------|-----------|
+| ----------------- | ------ | ----------- |
 | **EntityEventListener** | Сервер | Обработка событий CRUD-операций над сущностями (`OnInserting`, `OnSaving`, `OnDeleting` и др.) |
 | **AppEventListener** | Сервер | Обработка событий жизненного цикла приложения (`OnAppStart`, `OnAppEnd`, `OnSessionStart`) |
 | **WCF Services** | Сервер | Создание REST API-эндпоинтов через `[ServiceContract]` + `[OperationContract]` |
@@ -279,7 +292,7 @@ var esq = new EntitySchemaQuery(uc.EntitySchemaManager, "Account");
 
 При создании нового пакета необходимо правильно указать зависимости:
 
-```
+```text
 MyCustomPackage
 ├── зависит от: Base, NUI, UIv2
 ├── файлы:
@@ -394,7 +407,7 @@ using (var command = userConnection.EnsureDBConnection().CreateCommand()) {
 ### Типичные ошибки
 
 | Ошибка | Причина | Решение |
-|--------|---------|---------|
+| -------- | --------- | --------- |
 | `UserConnection = null` | Нет активной сессии или неправильный контекст получения (например, `HttpContext.Current` в EventListener) | Проверить источник UserConnection: в сервисе — `BaseService.UserConnection`, в EventListener — `entity.UserConnection`, в процессе — `Get<UserConnection>("UserConnection")` |
 | `404` на `/0/rest/{Service}/{Method}` | Сервис не зарегистрирован: отсутствуют атрибуты `[ServiceContract]`, `[OperationContract]`, `[WebInvoke]` или не указан `[AspNetCompatibilityRequirements]` | Проверить наличие всех атрибутов на классе и методе; убедиться, что сервис скомпилирован в пакете |
 | Изменения в серверном коде не применяются | Кэш компиляции или пакет не перекомпилирован | Перекомпилировать пакет: Конфигурация → Действия → Компилировать всё / компилировать изменённые пакеты. Очистить Redis-кэш при необходимости |
@@ -419,6 +432,7 @@ using (var command = userConnection.EnsureDBConnection().CreateCommand()) {
 
 ## Связанные темы
 
+- [Инфраструктура и деплой за пределами исходного кода](infrastructure-deployment-boundaries-overview.md) — IIS/proxy/SQL/redis/мониторинг на уровне окружения
 - [Схемы сущностей (Entity Schemas)](../server/entity-schemas.md)
 - [WCF-сервисы](../server/services.md)
 - [Обработчики событий (EventListeners)](../server/event-listeners.md)

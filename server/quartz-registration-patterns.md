@@ -1,0 +1,196 @@
+# Паттерны регистрации Quartz задач
+
+<!-- Версия: 1.0 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
+<!-- Теги: Quartz, registration, IAppEventListener, self-healing, failover -->
+
+> Практический документ о том, как задачи регистрируются при старте приложения, как перепланируются при изменении конфигурации и как в решении реализован self-healing Quartz.
+
+## Основные паттерны
+
+В кодовой базе регулярно повторяются пять паттернов:
+
+1. регистрация job на `OnAppStart`;
+1. remove-and-recreate при изменении настроек;
+1. self-healing через сравнение параметров и `SysSettings`;
+1. failover-monitoring для broken trigger'ов;
+1. self-rescheduling одноразовых job через `ScheduleNextRun(...)`.
+
+## 1. Регистрация на старте приложения
+
+Самый частый вариант:
+
+- класс реализует `IAppEventListener`;
+- в `OnAppStart(...)` получает `SystemUserConnection`;
+- получает `IAppSchedulerWraper`;
+- вызывает `Register(...)` или scheduling-логику.
+
+Примеры:
+
+- `ProcessMaintenanceEventListener.Base.cs`
+- `MailSyncEventListener.MailSync.cs`
+- `TouchQueueJobDispatcher.TouchPoints.cs`
+- `AnniversaryRemindingsEventListener.Base.cs`
+
+## 2. Remove-and-recreate
+
+Почти стандартный шаблон в BPMSoft:
+
+1. проверить `DoesJobExist(...)`;
+1. удалить старую задачу;
+1. пересобрать job;
+1. создать новый trigger;
+1. заново запланировать задачу.
+
+Почему так делают:
+
+- Quartz job проще полностью пересоздать, чем частично модифицировать;
+- старые trigger'ы и параметры не остаются висеть;
+- упрощается миграция между версиями и конфигурациями.
+
+Примеры:
+
+- `ProcessMaintenanceJob.Register(...)`
+- `MailSyncJob.Register(...)`
+- `SchedulerJobService.CreateSyncJob(...)`
+- `PeriodicitySettingsUtilities.CreateTrigger(...)`
+
+## 3. Self-healing через параметры job
+
+В `ClassJob` часто сохраняется параметр наподобие `initialFrequency`.
+
+Дальше в `Execute(...)` job:
+
+1. читает текущую настройку из `SysSettings`;
+1. сравнивает её с параметром, сохранённым при регистрации;
+1. если значение изменилось, запускает `Register(...)` заново.
+
+Так работают:
+
+- `ProcessMaintenanceJob`
+- `MailSyncJob`
+
+Преимущество:
+
+- задача самовосстанавливает своё расписание без отдельного админского действия;
+- изменение sys setting начинает действовать автоматически.
+
+## 4. Failover и repair broken trigger'ов
+
+Наиболее развитый вариант реализован через `BaseQueueJobDispatcher`.
+
+### Что делает база
+
+- ищет monitoring jobs по group matcher;
+- обходит trigger'ы задачи;
+- удаляет `Blocked` и `Error` trigger'ы;
+- `ResumeTrigger(...)` для `Paused`;
+- удаляет job, потерявшую все trigger'ы;
+- заново создаёт задачу, если monitoring job не найден.
+
+Ключевой метод:
+
+- `TryRescheduleJob()`
+
+### Где используется
+
+- `TouchQueueJobDispatcher.TouchPoints.cs`
+- `TouchFailoverHandler.TouchPoints.cs`
+
+Это уже не просто регистрация, а встроенный recovery loop.
+
+## 5. Self-rescheduling одноразовых job
+
+`SchedulerUtils.ScheduleNextRun(...)` реализует другой класс паттернов:
+
+1. задача не висит в scheduler постоянно;
+1. после выполнения она сама планирует следующий запуск;
+1. новый trigger - одноразовый, на `DateTimeOffset.Now.AddMinutes(...)`.
+
+Так устроены:
+
+- `EmailMiningJob`
+- `MLBatchPredictionJob`
+- `MLModelTrainerJob`
+
+Когда это полезно:
+
+- период может пересчитываться после каждого запуска;
+- нужно легко останавливать job через `SysSettings`;
+- не нужна постоянная repeat-структура trigger'а.
+
+## 6. Миграция между scheduler instance
+
+`BaseQueueJobDispatcher.UnscheduleUnactualJobs()` показывает ещё один важный паттерн:
+
+- если subsystem перешла с default scheduler на custom scheduler,
+- старые trigger'ы в default scheduler надо явно снять.
+
+Это особенно важно для:
+
+- очередей;
+- интеграционных подсистем;
+- named scheduler deployment.
+
+## Какой паттерн выбрать
+
+| Сценарий | Рекомендуемый паттерн |
+| ----- | ----- |
+| Фоновая системная задача | `IAppEventListener` + `Register(...)` |
+| Изменяемая частота через `SysSettings` | self-healing через `initialFrequency` |
+| Очередь и broken trigger recovery | `BaseQueueJobDispatcher` + `TryRescheduleJob()` |
+| Нерегулярный batch с динамическим period | `SchedulerUtils.ScheduleNextRun(...)` |
+| UI/service-driven sync task | remove-and-recreate через service layer |
+
+## Частые ошибки
+
+### 1. Новая конфигурация вступает в силу только после рестарта
+
+Причина:
+
+- задача зарегистрирована один раз на старте и не сверяется с настройками дальше.
+
+Исправление:
+
+- добавить self-healing проверку в `Execute(...)`;
+- либо перестраивать job при изменении конфигурации.
+
+### 2. Задача “существует”, но не запускается
+
+Причина:
+
+- trigger находится в `Blocked/Error/Paused`;
+- job осталась без trigger'ов.
+
+Исправление:
+
+- использовать recovery-подход наподобие `BaseQueueJobDispatcher`.
+
+### 3. После миграции scheduler появились дубликаты
+
+Причина:
+
+- старая job не была снята с default scheduler.
+
+Исправление:
+
+- явно unschedule legacy trigger'ы в старом scheduler.
+
+## Ключевые файлы
+
+| Область | Файл |
+| ----- | ----- |
+| App-start registration | `Autogenerated/Src/ProcessMaintenanceEventListener.Base.cs` |
+| App-start registration | `Autogenerated/Src/MailSyncEventListener.MailSync.cs` |
+| Queue self-healing base | `Autogenerated/Src/BaseQueueJobDispatcher.TasksQueue.cs` |
+| Queue failover monitor | `Autogenerated/Src/TouchFailoverHandler.TouchPoints.cs` |
+| Queue app listener | `Autogenerated/Src/TouchQueueJobDispatcher.TouchPoints.cs` |
+| Self-reschedule util | `Autogenerated/Src/SchedulerUtils.Base.cs` |
+| Self-rescheduling executors | `Autogenerated/Src/EmailMiningJob.EmailMining.cs`, `Autogenerated/Src/MLBatchPredictionJob.ML.cs` |
+
+## Связанные документы
+
+- [Обзор Quartz](scheduler-quartz.md)
+- [ClassJob и IJobExecutor](quartz-class-jobs.md)
+- [AppScheduler API](quartz-appscheduler-api.md)
+- [Каталог Quartz job-паттернов](quartz-job-catalog.md)
+- [Quartz troubleshooting](quartz-troubleshooting.md)

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint/main/schema/markdownlint-config-schema.json",
+  "comment": "Профиль для замкнутой энциклопедии: строгие правила по списку ниже; отключено то, что накапливалось в legacy-файлах до ввода CI-lint.",
+  "MD013": false,
+  "MD033": false,
+  "MD022": false,
+  "MD024": false,
+  "MD040": false,
+  "MD060": false,
+  "MD012": false,
+  "MD031": false,
+  "MD032": false
+}

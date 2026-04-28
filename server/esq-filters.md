@@ -1,0 +1,174 @@
+# ESQ Filters
+
+<!-- Версия: 1.0 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
+<!-- Теги: ESQ, filters, CreateFilterWithParameters, LogicalOperationStrict, EntitySchemaQueryFilter -->
+
+> Документ по фильтрам `EntitySchemaQuery`: простые фильтры, группы `AND/OR`, функции, диапазоны и типовые ошибки.
+
+## Базовый фильтр
+
+Самый частый способ:
+
+```csharp
+esq.Filters.Add(esq.CreateFilterWithParameters(
+    FilterComparisonType.Equal,
+    "City.Name",
+    "Москва"));
+```
+
+`CreateFilterWithParameters(...)` принимает:
+
+- тип сравнения;
+- path колонки;
+- одно или несколько значений.
+
+## AND по умолчанию
+
+Root `esq.Filters` обычно работает как `AND`.
+
+```csharp
+esq.Filters.Add(esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Closed", false));
+esq.Filters.Add(esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Operator.Id", operatorId));
+```
+
+Такой паттерн встречается в `BPMSoftOCCRouting.BPMSoftOCC.cs` при подсчёте открытых чатов оператора.
+
+## OR-группа
+
+Для `OR` создавайте отдельную коллекцию:
+
+```csharp
+var filters = new EntitySchemaQueryFilterCollection(esq, LogicalOperationStrict.Or);
+filters.Add(esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Source", sourceId));
+filters.Add(esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Target", targetId));
+esq.Filters.Add(filters);
+```
+
+Такой подход используется в `DiagramSchema.ProcessLibrary.cs` для загрузки connector'ов по двум возможным связям.
+
+## Вложенные группы
+
+Фильтры можно комбинировать:
+
+```csharp
+var fullFilterCollection = new EntitySchemaQueryFilterCollection(esq, LogicalOperationStrict.Or);
+fullFilterCollection.Add(esq.CreateFilterWithParameters(
+    FilterComparisonType.Equal, "CreatedBy", userConnection.CurrentUser.ContactId));
+fullFilterCollection.Add(esq.CreateFilterWithParameters(
+    FilterComparisonType.Equal, "IsShared", true));
+esq.Filters.Add(fullFilterCollection);
+```
+
+Reference: `CommandLineService.NUI.cs`.
+
+## Фильтр по датам и диапазонам
+
+Для диапазона используется `Between`:
+
+```csharp
+esqFilters.Add(esq.CreateFilterWithParameters(
+    FilterComparisonType.Between,
+    modifiedOnColumn.Name,
+    fromValue,
+    toValue));
+```
+
+В `IndexingEntityListBuilder.GlobalSearch.cs` это применяется не только к корневой `ModifiedOn`, но и к lookup-колонкам через path:
+
+```csharp
+$"{column.Name}.{column.ReferenceSchema.ModifiedOnColumn.Name}"
+```
+
+## StartWith / Contains
+
+Для поиска по строкам встречаются:
+
+- `FilterComparisonType.StartWith`
+- `FilterComparisonType.Contains`
+- `FilterComparisonType.Equal`
+
+Пример из `AccountSearcher.EmailMining.cs`:
+
+```csharp
+esq.CreateFilterWithParameters(FilterComparisonType.StartWith, "Number", formattedDomain);
+```
+
+## Функции в фильтрах
+
+Если обычного path недостаточно, можно создать `EntitySchemaQueryFilter` вручную.
+
+```csharp
+EntitySchemaQueryFunction upperNameFunction = esq.CreateUpperFunction(columnName);
+var filter = new EntitySchemaQueryFilter(FilterComparisonType.Equal) {
+    LeftExpression = new EntitySchemaQueryExpression(upperNameFunction)
+};
+filter.RightExpressions.Add(new EntitySchemaQueryExpression(EntitySchemaQueryExpressionType.Parameter) {
+    ParameterValue = filterValue.ToUpperInvariant()
+});
+esq.Filters.Add(filter);
+```
+
+Reference: `AccountSearcher.EmailMining.cs`.
+
+## Null-фильтры
+
+Для `null` лучше использовать специализированные методы:
+
+```csharp
+esq.Filters.Add(esq.CreateIsNotNullFilter("MainParam"));
+esq.Filters.Add(esq.CreateIsNullFilter("MainParam"));
+```
+
+Reference: `CommandLineService.NUI.cs`.
+
+## Имена фильтров
+
+Фильтру можно назначить имя:
+
+```csharp
+var filter = esq.CreateExistsFilter("[SysAdminUnit:Contact].Id");
+filter.Name = "ActiveFilter";
+```
+
+Это полезно для диагностики и для кода, который потом ищет/модифицирует фильтры.
+
+## Практические правила
+
+1. Для простого набора условий используйте root `esq.Filters`.
+1. Для любого `OR` создавайте отдельную `EntitySchemaQueryFilterCollection`.
+1. Не смешивайте много разных смыслов в одной группе фильтров.
+1. Для строкового поиска явно выбирайте `StartWith`, `Contains` или `Equal`.
+1. Для функций и кастомных выражений сохраняйте код компактным и изолированным в helper.
+1. Для lookup-фильтрации предпочитайте явный path: `Lookup.Id`, `Lookup.Name`, `Lookup.ModifiedOn`.
+
+## Частые ошибки
+
+### OR без группы
+
+Если просто добавить несколько фильтров в `esq.Filters`, они будут работать как `AND`, а не как `OR`.
+
+### Фильтр по display value вместо id
+
+Для lookup чаще надёжнее фильтровать по `Lookup.Id`, а не по `Lookup.Name`, если бизнес-условие завязано на конкретную запись.
+
+### Функция без `ResetSelectQuery`
+
+Если вы меняете выражение в уже выполненном ESQ, как в `AccountSearcher`, нужен `ResetSelectQuery()`, иначе запрос может остаться закэшированным в прежнем виде.
+
+## Ключевые файлы
+
+| Паттерн | Файл |
+| ----- | ----- |
+| custom upper filter | `Autogenerated/Src/AccountSearcher.EmailMining.cs` |
+| OR-группа | `Autogenerated/Src/DiagramSchema.ProcessLibrary.cs` |
+| CreatedBy/IsShared OR | `Autogenerated/Src/CommandLineService.NUI.cs` |
+| Between по lookup ModifiedOn | `Autogenerated/Src/IndexingEntityListBuilder.GlobalSearch.cs` |
+| AND-фильтры по lookup | `Autogenerated/Src/BPMSoftOCCRouting.BPMSoftOCC.cs` |
+
+## Связанные документы
+
+- [ESQ Overview](esq-overview.md)
+- [ESQ columns and paths](esq-columns-and-paths.md)
+- [ESQ joins and subqueries](esq-joins-and-subqueries.md)
+- [ESQ performance](esq-performance.md)
+- [ESQ troubleshooting](esq-troubleshooting.md)

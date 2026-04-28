@@ -1,0 +1,189 @@
+# PeriodicitySettingsUtilities
+
+<!-- Версия: 1.0 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
+<!-- Теги: Quartz, PeriodicitySettingsUtilities, periodicity, trigger, calendar -->
+
+> Документ по связке `PeriodicitySettings` -> Quartz trigger: как `PeriodicitySettingsUtilities` преобразует запись периодичности в scheduler job и какие ограничения видны в текущей реализации.
+
+## Назначение
+
+`PeriodicitySettingsUtilities` нужен для сценария, где расписание задаётся не напрямую cron-строкой, а записью в сущности `PeriodicitySettings`.
+
+Типовой вход:
+
+- `UserConnection`
+- `periodicitySettingsRecordUId`
+- `jobName`
+- `jobGroup`
+- `processName`
+- `solutionName`
+- `userName`
+- optional `schedulerName`
+
+## Общий алгоритм `CreateTrigger(...)`
+
+Метод делает следующее:
+
+1. загружает запись `PeriodicitySettings`;
+1. получает scheduler через `AppScheduler.GetSchedulerOrDefault(schedulerName)`;
+1. удаляет существующую job;
+1. создаёт новый `ProcessJob`;
+1. собирает trigger на основе полей периодичности;
+1. при необходимости добавляет `DailyCalendar`;
+1. планирует задачу в scheduler.
+
+## Какие режимы поддерживаются
+
+В коде есть ветки для:
+
+- daily;
+- weekly;
+- monthly.
+
+Дополнительно внутри daily/weekly/monthly различаются:
+
+- `IsOnce`
+- `IsCustom`
+
+То есть модель пытается покрыть:
+
+- один запуск в день;
+- несколько запусков в течение дня;
+- weekly/monthly одноразовые варианты.
+
+## Daily сценарии
+
+### `IsOnce`
+
+Если запуск один раз в день:
+
+- берётся `OnceAt.TimeOfDay`;
+- при необходимости `schedulerStart` сдвигается на следующий день;
+- создаётся `SimpleTriggerImpl` с шагом в 1 день.
+
+### `IsCustom`
+
+Если запуск много раз в день:
+
+- используются `CustomFrom` / `CustomTill`;
+- интервал строится из `CustomPeriodType` и `CustomPeriod`;
+- создаётся `DailyCalendar`;
+- trigger ограничивается окном “с ... по ...”.
+
+## Weekly и Monthly сценарии
+
+Для weekly/monthly одноразовых запусков код строит cron expression через `GetCronExpression(...)`.
+
+Поддержанные ветки:
+
+- weekly + once per day;
+- monthly custom day + once per day;
+- monthly last day + once per day.
+
+## Важные ограничения текущей реализации
+
+### 1. `IsDaily = true` форсируется в коде
+
+Внутри `CreateTrigger(...)` есть строка:
+
+- `_periodicity.IsDaily = true; // (Temporary for beta-version)`
+
+Практический вывод:
+
+- логика daily сейчас приоритетнее остальных вариантов;
+- weekly/monthly надо воспринимать осторожно и проверять отдельно.
+
+### 2. `isManyTimesPerDay` для weekly/monthly не реализован
+
+В коде стоят комментарии:
+
+- `// multitrigger???`
+
+То есть многократные daily-window запуски для weekly/monthly сценариев не доведены до production-ready логики.
+
+### 3. Multi-trigger ветка выглядит незавершённой
+
+Внутри daily custom-ветки:
+
+- формируется список `multiTrigger`;
+- для каждого элемента выставляется misfire;
+- но в scheduler вызывается `scheduler.ScheduleJob(job, trigger)`, а не `multiTriggerPart`.
+
+Это выглядит как проблемная или недописанная ветка и требует проверки перед повторным использованием.
+
+### 4. Misfire выставляется грубо
+
+Для финального `trigger != null` используется:
+
+- `trigger.MisfireInstruction = MisfireInstruction.SimpleTrigger.FireNow`
+
+Причём это делается для `AbstractTrigger`, даже если фактически trigger cron-based.
+
+### 5. Calendar name общий
+
+Используется фиксированное имя:
+
+- `FromTillPeriodicityDailyCalendar`
+
+Это значит, что при нескольких независимых сценариях календарь переиспользуется глобально внутри scheduler instance.
+
+## Timezone-поведение
+
+`DailyCalendar` получает timezone текущего пользователя:
+
+- `_userConnection.CurrentUser.TimeZone`
+
+Следствие:
+
+- trigger-окно зависит от user timezone;
+- server UTC и пользовательская локаль могут давать неожиданный результат, если это не учесть при настройке.
+
+## Генерация cron
+
+`GetCronExpression(...)` собирает выражение из:
+
+- `seconds`
+- `minutes`
+- `hours`
+- `dayOfMonth`
+- `month`
+- `dayOfWeek`
+
+Это не универсальный cron-builder, а узкий helper для supported веток `PeriodicitySettingsUtilities`.
+
+## Когда использовать этот механизм
+
+Подходит, если:
+
+- расписание задаётся пользовательской записью `PeriodicitySettings`;
+- нужно строить process-based job из UI/admin сценария;
+- нет требования к сложной кастомной cron-логике.
+
+Не подходит, если:
+
+- требуется надёжный weekly/monthly multi-run сценарий;
+- нужен точный misfire control;
+- важно иметь прозрачную и полностью предсказуемую trigger-модель;
+- задача должна быть `ClassJob`, а не `ProcessJob`.
+
+## Практические рекомендации
+
+1. Для критичных сценариев проверяйте итоговый trigger вручную.
+1. Не полагайтесь без проверки на weekly/monthly custom multi-run ветки.
+1. Если нужен production-stable cron, часто проще использовать явный `CronTriggerImpl`.
+1. Если расписание хранится в данных, но сценарий сложный, добавьте отдельный слой валидации над `PeriodicitySettings`.
+
+## Ключевые файлы
+
+| Область | Файл |
+| ----- | ----- |
+| Основная реализация | `Autogenerated/Src/PeriodicitySettingsUtilities.Base.cs` |
+| Service entry point | `Autogenerated/Src/SchedulerJobService.NUI.cs` |
+
+## Связанные документы
+
+- [Обзор Quartz](scheduler-quartz.md)
+- [Triggers, cron и misfire](quartz-triggers-cron.md)
+- [SchedulerJobService](quartz-schedulerjobservice.md)
+- [ProcessJob и QuartzJobTriggerManager](quartz-process-jobs.md)
+- [Quartz troubleshooting](quartz-troubleshooting.md)

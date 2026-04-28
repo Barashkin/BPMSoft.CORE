@@ -1,6 +1,6 @@
 # Утилиты и вспомогательные модули
 
-<!-- Версия: 1.0 | Обновлено: 2026-03-19 | Платформа: BPMSoft 1.9 -->
+<!-- Версия: 1.1 | Обновлено: 2026-04-27 | Платформа: BPMSoft 1.9 -->
 <!-- Теги: ServiceHelper, RightUtilities, ConfigurationEnums, ConfigurationConstants, ProcessModuleUtilities -->
 
 ## ServiceHelper — вызов серверных сервисов
@@ -51,6 +51,8 @@ var url = BPMSoft.ServiceHelper.buildConfigurationUrl("ServiceName", "MethodName
 ## RightUtilities — проверка прав
 
 **Файл:** `RightUtilities.NUI.js`
+
+Подробный разбор клиентских и серверных проверок прав см. в [Security Client Rights](../server/security-client-rights.md) и [Security/Rights Overview](../server/security-overview.md).
 
 ### Проверка прав на операцию
 
@@ -430,7 +432,7 @@ this.callService(function(response) {
 ## Troubleshooting
 
 | Проблема | Причина | Решение |
-|----------|---------|---------|
+| -------- | ------- | ------- |
 | `callService` возвращает пустой ответ | Неверное имя сервиса или метода (регистрозависимы) | Проверить точное имя сервиса/метода, сверить с `[OperationContract]` |
 | Права всегда `false` | Операция не привязана к роли | Проверить `SysAdminOperation` и привязку к роли в разделе «Администрирование» |
 | Маска загрузки не исчезает | Забыт `Mask.hide()` в error callback | Добавить `BPMSoft.Mask.hide(maskId)` во все ветки callback |

@@ -1,0 +1,17 @@
+{
+  "name": "bpmsft-base-docs",
+  "private": true,
+  "description": "Инструменты проверки Markdown для docs/ (энциклопедия)",
+  "scripts": {
+    "lint": "markdownlint \"**/*.md\" --config .markdownlint.json --ignore node_modules",
+    "verify:links": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/Verify-Docs.ps1",
+    "verify:schemas": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/Export-EntitySchemaNames.ps1",
+    "verify": "npm run verify:links"
+  },
+  "devDependencies": {
+    "markdownlint-cli": "0.33.0"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
